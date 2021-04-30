@@ -158,7 +158,7 @@ class ENVIROPLUSclient:
 
     @enviroplus_retry
     async def download_source(self, source: str, when: datetime) -> bytes:
-        url = self._url + source
+        url = f'{self._url}{"" if self._url.endswith("/") else "/"}{source}'
         headers = {'Content-Type': 'application/json'}
 
         today_utc = datetime.utcnow().date()
@@ -493,22 +493,17 @@ def configure_logging(log_level: str) -> None:
 @click.group()
 @click.argument('tdmq-endpoint', envvar='TDMQ_URL')
 @click.argument('tdmq-token', envvar='TDMQ_AUTH_TOKEN')
-@click.option('--sources-file', envvar='ENVIROPLUS_SOURCES_FILE',
-              default='sources.json')
 @click.option("--log-level", envvar="ENVIROPLUS_LOG_LEVEL",
               type=click.Choice(['DEBUG', 'INFO', 'WARNING',
                                  'ERROR', 'CRITICAL']), default='INFO')
 @click.pass_context
-def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, sources_file: str,
-               log_level) -> None:
+def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, log_level) -> None:
     configure_logging(log_level)
     logger.debug("main(%s, %s, %s)",
                  tdmq_endpoint, tdmq_token, log_level)
 
     if not tdmq_token:
         raise ValueError("TDMQ token not provided!")
-
-    run_conf_list = RunConfigList(sources_file)
 
     logger.info(
         "Pointing to tdmq service %s. Auth token provided",
@@ -517,7 +512,6 @@ def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, sources_file: str,
 
     # make the client available to subcommands
     ctx.ensure_object(dict)
-    ctx.obj['run_conf_list'] = run_conf_list
     ctx.obj['tdmq_client'] = tdmq_client
     logger.debug("enviroplus finished.  Continuing in subcommand (if any)")
 
@@ -539,12 +533,16 @@ def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, sources_file: str,
 #
 # #############################################################################
 @enviroplus.command()
+@click.option('--sources-file', default='sources.json',
+              envvar='ENVIROPLUS_SOURCES_FILE',
+              type=str, show_default=True, show_envvar=True,
+              help=("File containing the definition of the sources to ingest"))
 @click.option('--batch-size', default=20, envvar='ENVIRONPLUS_BATCH_SIZE',
-              type=int, show_default=True,
+              type=int, show_default=True, show_envvar=True,
               help=("Size of batch of products to be concurrently downloaded "
                     "and then written."))
 @click.option('--max-batches', default=3, envvar='ENVIRONPLUS_MAX_BATCHES',
-              type=int, show_default=True,
+              type=int, show_default=True, show_envvar=True,
               help=("Max number of downloaded batches to queue up in memory "
                     "for writing to the array"))
 @click.option('--strictly-after',
@@ -552,17 +550,19 @@ def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, sources_file: str,
               #       "to be downloaded. ISO format."))
               help=("Not yet implemented"))
 @click.option('--enviroplus-endpoint', default='http://localhost/',
-              show_default=True, envvar='ENVIROPLUS_URL',
+              show_default=True, envvar='ENVIROPLUS_URL', show_envvar=True,
               help=("The endpoint of the Enviroplus server"))
 @click.option('--from-timezone', help=("The time zone of the data"))
 @click.pass_context
 def ingest(click_ctx, batch_size: int, max_batches: int,
-           from_timezone: str, enviroplus_endpoint: str='http://localhost/',
+           from_timezone: str, sources_file: str,
+           enviroplus_endpoint: str='http://localhost/',
            strictly_after: str=None) -> None:
     """
     Ingest data from the Enviroplus service into the TDM polystore.
     """
-    run_conf_list = click_ctx.obj['run_conf_list']
+    run_conf_list = RunConfigList(sources_file)
+
     tdmq_client = click_ctx.obj['tdmq_client']
 
 #     if strictly_after:
@@ -637,18 +637,24 @@ def ingest(click_ctx, batch_size: int, max_batches: int,
     logger.info("Operation complete")
 
 
-# @enviroplus.command()
-# @click.pass_obj
-# def register_source(click_obj) -> None:
-#     """
-#     Register TDMq Source, if it doesn't exist.
-#     """
-#     run_conf = click_obj['run_conf']
-#     tdmq_client = click_obj['tdmq_client']
-#
-#     source = fetch_tdmq_source(tdmq_client, run_conf)
-#     if not source:
-#         register_tdmq_source(tdmq_client, run_conf)
+@enviroplus.command()
+@click.option('--sources-file', default='sources.json',
+              envvar='ENVIROPLUS_SOURCES_FILE',
+              type=str, show_default=True, show_envvar=True,
+              help=("File containing the definition of the sources to ingest"))
+@click.pass_obj
+def register_source(click_obj, sources_file: str) -> None:
+    """
+    Register TDMq Source, if it doesn't exist.
+    """
+    run_conf_list = RunConfigList(sources_file)
+    tdmq_client = click_obj['tdmq_client']
+
+    # Fetch or register the TDMq sources.
+    for s in run_conf_list:
+        source = fetch_tdmq_source(tdmq_client, s.source_def)
+        if not source:
+            source = register_tdmq_source(tdmq_client, s.source_def)
 
 
 @enviroplus.command()
