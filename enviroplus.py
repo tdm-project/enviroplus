@@ -49,8 +49,8 @@ class RunConfig:
     def controlled_properties(self) -> List[str]:
         return self._source['controlledProperties']
 
-    def append_data(self, data: Dict):
-        deep_merge_data(self._data, data)
+    def append_data(self, data: Dict, raise_on_conflict: bool):
+        deep_merge_data(self._data, data, raise_on_conflict=raise_on_conflict)
 
     @property
     def source_data(self) -> Iterable:
@@ -224,7 +224,8 @@ def sizeof_fmt(num, suffix='B'):
     return "%.1f%s%s" % (num, 'Yi', suffix)
 
 
-def deep_merge_data(old_data: Dict, new_data: Dict, path: str=None):
+def deep_merge_data(old_data: Dict, new_data: Dict, path: str=None,
+                    raise_on_conflict: bool=True):
     # Thanks to Andrew Cooke
     # https://stackoverflow.com/a/7205107
 
@@ -238,11 +239,19 @@ def deep_merge_data(old_data: Dict, new_data: Dict, path: str=None):
         if _k in old_data:
             if isinstance(
                     old_data[_k], dict) and isinstance(new_data[_k], dict):
-                deep_merge_data(old_data[_k], new_data[_k], path + [str(_k)])
+                deep_merge_data(old_data[_k], new_data[_k], path + [str(_k)],
+                                raise_on_conflict)
             elif old_data[_k] == new_data[_k]:
                 pass
             else:
-                raise Exception('Conflict at %s' % '.'.join(path + [str(_k)]))
+                if raise_on_conflict:
+                    raise Exception(
+                        'Conflict at %s' % '.'.join(path + [str(_k)]))
+                else:
+                    logger.info(
+                        'Conflict at %s: overwriting old values'
+                        % '.'.join(path + [str(_k)]))
+                    old_data[_k] = new_data[_k]
         else:
             old_data[_k] = new_data[_k]
 
@@ -260,12 +269,13 @@ async def download_source_at_ts(enviroplus_client: ENVIROPLUSclient,
 
     for _d in downloads:
         if _d:
-            source.append_data(_d)
+            source.append_data(_d, raise_on_conflict=False)
 
     return source
 
 
 async def gen_source_timestamps(sources: RunConfigList,
+                                days_back: str,
                                 strictly_after: datetime=None):
     if not sources:
         return
@@ -274,10 +284,12 @@ async def gen_source_timestamps(sources: RunConfigList,
     today_utc = datetime.utcnow().date()
 
     for s in sources:
-        if s.source_last_activity is not None:
+        if (s.source_last_activity is not None and
+                s.source_last_activity.date() >=
+                today_utc - timedelta(days=days_back)):
             last_timestamp = s.source_last_activity.date()
         else:
-            last_timestamp = today_utc - timedelta(days=2)
+            last_timestamp = today_utc - timedelta(days=days_back)
 
         while last_timestamp <= today_utc:
             yield s, last_timestamp
@@ -331,7 +343,7 @@ async def write_to_tdmq(source: RunConfig) -> None:
 
 # async def ingest_sources(destination: List[Source], strictly_after: datetime,
 #                         batch_size: int=20, max_batches: int=3) -> None:
-async def ingest_sources(sources: RunConfigList, endpoint: str,
+async def ingest_sources(sources: RunConfigList, days_back: int, endpoint: str,
                          batch_size: int=20, max_batches: int=3) -> None:
     outstanding_batch_semaphore = asyncio.Semaphore(max_batches)
     outstanding_batches = 0
@@ -384,7 +396,8 @@ async def ingest_sources(sources: RunConfigList, endpoint: str,
             tasks = list()
             # async for s, t  in gen_source_timestamps(sources,
             #                                           strictly_after):
-            async for s, t in gen_source_timestamps(sources):
+            async for s, t in gen_source_timestamps(sources,
+                                                    days_back=days_back):
                 logger.debug(
                     "appending timestamp %s for source %s to batch",
                     t.isoformat(), s.source_id)
@@ -545,6 +558,9 @@ def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, log_level) -> None:
               type=int, show_default=True, show_envvar=True,
               help=("Max number of downloaded batches to queue up in memory "
                     "for writing to the array"))
+@click.option('--days-back', default=7, envvar='ENVIRONPLUS_DAYS_BACK',
+              type=int, show_default=True, show_envvar=True,
+              help=("Max number of days to retrieve"))
 @click.option('--strictly-after',
               # help=("Force the start timestamp for the downloaded products "
               #       "to be downloaded. ISO format."))
@@ -554,7 +570,7 @@ def enviroplus(ctx, tdmq_endpoint: str, tdmq_token: str, log_level) -> None:
               help=("The endpoint of the Enviroplus server"))
 @click.option('--from-timezone', help=("The time zone of the data"))
 @click.pass_context
-def ingest(click_ctx, batch_size: int, max_batches: int,
+def ingest(click_ctx, batch_size: int, max_batches: int, days_back: int,
            from_timezone: str, sources_file: str,
            enviroplus_endpoint: str='http://localhost/',
            strictly_after: str=None) -> None:
@@ -630,8 +646,9 @@ def ingest(click_ctx, batch_size: int, max_batches: int,
 #             batch_size=batch_size, max_batches=max_batches))
 
     asyncio.run(
-        ingest_sources(sources=run_conf_list, endpoint=enviroplus_endpoint,
-                       batch_size=batch_size, max_batches=max_batches))
+        ingest_sources(sources=run_conf_list, days_back=days_back,
+                       endpoint=enviroplus_endpoint, batch_size=batch_size,
+                       max_batches=max_batches))
 
     logger.info("Finished ingesting.")
     logger.info("Operation complete")
