@@ -25,9 +25,9 @@ class RunConfig:
     def __init__(self, source: Dict):
         self._source = source
         self._last_activity = "infinity"
-        self._data = dict()
         self._tdmq_source = None
-        self._timezone = 'UTC'
+        self._timezone = None
+        self._data = pandas.DataFrame()
 
     @property
     def source_def(self) -> Dict[str, Any]:
@@ -49,8 +49,8 @@ class RunConfig:
     def controlled_properties(self) -> List[str]:
         return self._source['controlledProperties']
 
-    def append_data(self, data: Dict, raise_on_conflict: bool):
-        deep_merge_data(self._data, data, raise_on_conflict=raise_on_conflict)
+    def append_data(self, data: list, raise_on_conflict: bool):
+        self._data = self._data.append(data, ignore_index=True, sort=False)
 
     @property
     def source_data(self) -> Iterable:
@@ -297,7 +297,6 @@ async def gen_source_timestamps(sources: RunConfigList,
 
 
 def restructure_download_results(source: RunConfig) -> Tuple[List, List]:
-    df = pandas.DataFrame(source.source_data)
     replace_names = {
         'pressure': 'barometricPressure',
         'humidity': 'relativeHumidity',
@@ -307,15 +306,23 @@ def restructure_download_results(source: RunConfig) -> Tuple[List, List]:
         'pm10': 'PM10',
     }
 
+    df = source.source_data
+
+    df = df.set_index('date')
     df.index = pandas.to_datetime(df.index)
-    df.index = df.index.tz_localize(
-        source.source_timezone).tz_convert('UTC')
+    if source.source_timezone:
+        df.index = df.index.tz_localize(
+            source.source_timezone).tz_convert('UTC')
+    else:
+        df.index = df.index.tz_convert('UTC')
+
     df.rename(columns=replace_names, inplace=True)
 
     if source.source_last_activity:
         df = df[df.index > pandas.to_datetime(source.source_last_activity)]
 
     times = df.index.to_list()
+
     products = df.to_dict(orient='records')
 
     return times, products
