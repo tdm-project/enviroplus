@@ -308,6 +308,16 @@ def restructure_download_results(source: RunConfig) -> Tuple[List, List]:
 
     df = source.source_data
 
+    # Removes duplicated records
+    size_pre = df.size
+    df = df.drop_duplicates(subset=['date'], keep='last')
+    size_post = df.size
+
+    if (size_pre != size_post):
+        logger.info(
+            "Found %d duplicated records for source %s: removed.",
+            size_pre-size_post, source.source_id)
+
     df = df.set_index('date')
     df.index = pandas.to_datetime(df.index)
     if source.source_timezone:
