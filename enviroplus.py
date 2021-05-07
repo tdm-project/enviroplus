@@ -493,7 +493,8 @@ def print_enviroplus_client_stats(stats: dict) -> None:
 
 
 def fetch_tdmq_source(client: Client, source_description: Dict) -> Source:
-    sources = client.find_sources(args={'id': source_description['id']})
+    sources = client.find_sources(
+        args={'id': source_description['id'], 'only_public': 'false'})
     if len(sources) > 1:
         raise RuntimeError(f"Bug?  Got {len(sources)} sources from tdmq query "
                            "for source id {run_conf.source_id}. Aborting")
