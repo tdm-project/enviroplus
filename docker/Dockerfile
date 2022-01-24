@@ -2,6 +2,8 @@ FROM tdmproject/tdmq-client:master-641
 
 ENV ENVIROPLUS_HOME /opt/enviroplus
 
+USER root
+
 WORKDIR $ENVIROPLUS_HOME
 COPY requirements.txt "${ENVIROPLUS_HOME}"
 RUN pip3 install --no-cache-dir -r requirements.txt
