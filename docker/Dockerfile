@@ -1,4 +1,4 @@
-FROM tdmproject/tdmq-client:dev-438
+FROM tdmproject/tdmq-client:master-641
 
 ENV ENVIROPLUS_HOME /opt/enviroplus
 
