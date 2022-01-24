@@ -11,6 +11,6 @@ COPY enviroplus.py "${ENVIROPLUS_HOME}"
 RUN chmod a+rx "${ENVIROPLUS_HOME}/enviroplus.py"
 
 RUN useradd -m -s /bin/bash -d "${ENVIROPLUS_HOME}" enviroplus
-USER enviroplus
+#USER enviroplus
 
 ENTRYPOINT ["python3", "./enviroplus.py"]
