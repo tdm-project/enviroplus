@@ -2,15 +2,18 @@ FROM tdmproject/tdmq-client:master-641
 
 ENV ENVIROPLUS_HOME /opt/enviroplus
 
-USER root
-
 WORKDIR $ENVIROPLUS_HOME
-COPY requirements.txt "${ENVIROPLUS_HOME}"
+
+COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
-COPY enviroplus.py "${ENVIROPLUS_HOME}"
-RUN chmod a+rx "${ENVIROPLUS_HOME}/enviroplus.py"
+
+COPY enviroplus.py .
+COPY enviroplus_entrypoint.sh .
+
+RUN chmod a+rx enviroplus.py enviroplus_entrypoint.sh
 
 RUN useradd -m -s /bin/bash -d "${ENVIROPLUS_HOME}" enviroplus
-#USER enviroplus
 
-ENTRYPOINT ["python3", "./enviroplus.py"]
+USER enviroplus
+
+ENTRYPOINT ["./enviroplus_entrypoint.sh"]
