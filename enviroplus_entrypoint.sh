@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 for varname in ${!HADOOP*}; do unset ${varname}; done
 
