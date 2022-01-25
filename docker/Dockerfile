@@ -10,13 +10,13 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 USER root
 
 RUN useradd -m -s /bin/bash -d "${ENVIROPLUS_HOME}" enviroplus
-RUN chown -R enviroplus .
-
-USER enviroplus
 
 COPY enviroplus.py .
 COPY enviroplus_entrypoint.sh .
 
 RUN chmod a+rx enviroplus.py enviroplus_entrypoint.sh
+
+RUN chown -R enviroplus .
+USER enviroplus
 
 ENTRYPOINT ["./enviroplus_entrypoint.sh"]
